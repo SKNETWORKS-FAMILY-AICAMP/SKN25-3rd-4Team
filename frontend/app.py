@@ -226,36 +226,9 @@ def render_answer_card(result: dict) -> str:
     # 출처 pills
     source_html = render_source_pills(paper_sources)
 
-    # 용어 매칭 정보
-    term_html = ""
-    if matched:
-        term_pills = " ".join(
-            f'<span class="meta-pill">{t["alias"]} → {", ".join(t.get("expansions", [])[:3])}</span>'
-            for t in matched
-        )
-        term_html = f'<div style="margin-top:8px">{term_pills}</div>'
-
-    # 메타 바
-    meta_pills = []
-    if category:
-        meta_pills.append(f'<span class="meta-pill">📂 {category}</span>')
-    if query_type:
-        meta_pills.append(f'<span class="meta-pill">🏷️ {query_type}</span>')
-    if result.get("needs_web"):
-        meta_pills.append('<span class="meta-pill">🌐 웹검색 사용</span>')
-    meta_html = f'<div class="meta-bar">{"".join(meta_pills)}</div>' if meta_pills else ""
-
-    return f"""
-    <div class="res-card">
-        <h3>🧬 BioRAG 분석 리포트</h3>
-        {badge}
-        {score_html}
-        {body_html}
-        {source_html}
-        {term_html}
-        {meta_html}
-    </div>
-    """
+    # 빈 값으로 인한 빈 줄 방지 → compact 이어붙임
+    inner = "".join(filter(None, [badge, score_html, body_html, source_html]))
+    return f'<div class="res-card"><h3>🧬 BioRAG 분석 리포트</h3>{inner}</div>'
 
 
 # ── Session ──

@@ -508,7 +508,25 @@ def postprocess(state: GraphState) -> dict:
     # 4. 서론/본론/결론 문단 구조화
     answer = _structure_paragraphs(answer)
 
-    # 5. 근거 유무 — paper_docs 기준으로만 판단 (score 바 표시 보장)
-    has_paper_evidence = state.get("has_paper_evidence", False)
+    # 5. 근거 없음 신호가 답변에 있으면 paper_docs·score 완전 초기화
+    # (ChromaDB는 항상 top-k를 반환하므로 LLM 답변 내용으로 최종 판단)
+    no_evidence_signals = [
+        "근거를 찾지 못했습니다",
+        "확인되지 않았습니다",
+        "데이터가 없습니다",
+        "논문 근거는 없습니다",
+        "직접적인 근거는 없습니다",
+        "관련 논문이 없습니다",
+        "관련 정보를 찾을 수 없습니다",
+    ]
 
+    if any(sig in answer for sig in no_evidence_signals):
+        return {
+            "answer": answer,
+            "has_paper_evidence": False,
+            "paper_docs": [],
+            "paper_score": 0.0,
+        }
+
+    has_paper_evidence = state.get("has_paper_evidence", False)
     return {"answer": answer, "has_paper_evidence": has_paper_evidence}
