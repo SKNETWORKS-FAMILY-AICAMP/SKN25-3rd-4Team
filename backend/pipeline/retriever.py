@@ -131,7 +131,6 @@ class VectorStoreManager:
             result = parallel.invoke(query)
         except Exception as e:
             logger.warning("Retrieval failed, trying without category filter: %s", e)
-            # 카테고리 필터 제거하고 재시도
             paper_kwargs.pop("filter", None)
             aux_kwargs.pop("filter", None)
             paper_retriever = self._get_paper_store().as_retriever(
@@ -152,9 +151,31 @@ class VectorStoreManager:
         if is_supplement:
             paper_docs = _filter_supplement_docs(paper_docs)
 
+        # MMR 결과 기반 similarity score 계산
+        paper_score = 0.0
+        if paper_docs:
+            try:
+                scored = self._get_paper_store().similarity_search_with_relevance_scores(
+                    query, k=s.paper_fetch_k
+                )
+                score_map = {
+                    d.metadata.get("doc_id", d.page_content[:40]): sc
+                    for d, sc in scored
+                }
+                scores = [
+                    score_map[doc.metadata.get("doc_id", doc.page_content[:40])]
+                    for doc in paper_docs
+                    if doc.metadata.get("doc_id", doc.page_content[:40]) in score_map
+                ]
+                paper_score = min(sum(scores) / len(scores) * 1.4, 1.0) if scores else 0.0
+                logger.info("평균 similarity score: %.4f", paper_score)
+            except Exception as e:
+                logger.warning("Score 계산 실패: %s", e)
+
         return {
             "paper_docs": paper_docs,
             "aux_docs": aux_docs,
+            "paper_score": paper_score,
         }
 
 

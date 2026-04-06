@@ -119,14 +119,8 @@ def apply_safety_notes(
             f"⚠️ '{question}'의 조합 자체를 직접 평가한 임상 논문 근거는 현재 확인되지 않았습니다. "
             "아래 내용은 개별 성분에 대한 논문 근거입니다."
         )
-        combo_footer = (
-            "⚠️ 개별 성분 효과는 입증되었으나, 직접 혼합 복용에 대한 임상 데이터는 부족합니다. "
-            "복용 전 의사 또는 약사와 상담하는 것이 좋습니다."
-        )
         if combo_header not in text:
             text = combo_header + "\n\n" + text
-        if combo_footer not in text:
-            text = text + "\n\n" + combo_footer
 
     elif is_indirect:
         indirect_header = (

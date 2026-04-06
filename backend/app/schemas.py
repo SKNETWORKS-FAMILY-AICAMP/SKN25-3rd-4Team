@@ -36,6 +36,8 @@ class AskResponse(BaseModel):
     paper_sources: list[SourceInfo] = Field(default_factory=list)
     aux_sources: list[SourceInfo] = Field(default_factory=list)
     has_paper_evidence: bool = True
+    weak_evidence: bool = False    
+    paper_score: float = 0.0
     needs_web: bool = False
     expanded_query: str = ""
 
