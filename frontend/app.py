@@ -266,6 +266,8 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = {}
 if "current_chat_id" not in st.session_state:
     st.session_state.current_chat_id = None
+if "pending_input" not in st.session_state:
+    st.session_state.pending_input = None
 
 
 # ── Sidebar ──
@@ -296,15 +298,12 @@ with st.sidebar:
 
     st.caption("예시 질문")
     examples = [
-        "마운자로 부작용이 뭐야?",
-        "올레샷 먹으면 효과 있어?",
-        "콜라겐 보충제가 피부에 도움 돼?",
-        "오메가3가 심혈관에 도움 되나?",
-        "간헐적 단식의 대사 효과는?",
+        "마운자로의 효과",
+        "콜라겐이 피부에 도움이 돼?",
     ]
     for ex in examples:
         if st.button(f"💬 {ex}", key=f"ex_{ex}", use_container_width=True):
-            st.session_state.messages.append({"role": "user", "content": ex})
+            st.session_state.pending_input = ex
             st.session_state.current_chat_id = ex[:15]
             st.rerun()
 
@@ -338,7 +337,11 @@ for m in st.session_state.messages:
         else:
             st.markdown(m["content"], unsafe_allow_html=True)
 
-if user_input := st.chat_input("건강 트렌드에 대해 물어보세요!"):
+# 예시 질문 버튼으로 들어온 입력 처리
+pending = st.session_state.pop("pending_input", None)
+user_input = st.chat_input("건강 트렌드에 대해 물어보세요!") or pending
+
+if user_input:
     if st.session_state.current_chat_id is None:
         st.session_state.current_chat_id = user_input[:15]
 
@@ -351,11 +354,15 @@ if user_input := st.chat_input("건강 트렌드에 대해 물어보세요!"):
             result = call_backend(user_input)
 
         if result:
+            # answer 필드에서 잔여 HTML 태그를 한 번 더 제거해서 저장
+            clean_text = re.sub(r"<[^>]+>", "", result.get("answer", ""))
+            result["answer"] = clean_text
+
             card_html = render_answer_card(result)
             st.markdown(card_html, unsafe_allow_html=True)
             st.session_state.messages.append({
                 "role": "assistant",
-                "content": result.get("answer", ""),
+                "content": clean_text,
                 "result": result,
             })
         else:
