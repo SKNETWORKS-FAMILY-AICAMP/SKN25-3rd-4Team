@@ -190,15 +190,17 @@ def render_answer_card(result: dict) -> str:
     clean = re.sub(r'(?<!\n)(※)', r'\n\n\1', clean)
     body_parts = []
     for line in clean.split("\n"):
-        s = line.strip()
-        if not s:
-            continue
-        if "⚠️" in s or "의사 또는 약사와 상담" in s:
-            body_parts.append(f'<div class="combo-warning">{s}</div>')
-        elif "※ 검색된 논문의 관련도가 낮아" in s:
-            continue
+        stripped = line.strip()
+        if not stripped:
+            body_parts.append("<br>")
+        elif "⚠️" in stripped or "의사 또는 약사와 상담" in stripped:
+            body_parts.append(f'<div class="combo-warning">{stripped}</div>')
+        elif "※ 검색된 논문의 관련도가 낮아" in stripped:
+            pass
+        elif "자세한 내용은 아래 논문을 확인하세요" in stripped:
+            pass
         else:
-            body_parts.append(f"<p style='margin:4px 0'>{s}</p>")
+            body_parts.append(f"<p style='margin:4px 0'>{stripped}</p>")
     body_html = "\n".join(body_parts)
 
     # ── 근거 뱃지 ──
