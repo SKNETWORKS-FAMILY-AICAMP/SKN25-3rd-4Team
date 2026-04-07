@@ -6,12 +6,14 @@ GET  /api/health  — 헬스체크 + 컬렉션 상태
 """
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from app.schemas import AskRequest, AskResponse, HealthResponse
 from app.settings import get_settings
@@ -62,6 +64,27 @@ async def ask(req: AskRequest) -> AskResponse:
     """RAG 파이프라인을 실행하고 답변을 반환한다."""
     assert _rag is not None, "Service not initialized"
     return _rag.ask(req.question)
+
+
+@app.post("/api/ask/stream")
+async def ask_stream(req: AskRequest) -> StreamingResponse:
+    """스트리밍 RAG — SSE로 LLM 토큰을 실시간 반환한다.
+
+    이벤트:
+      data: {"type": "chunk", "text": "..."}   — 생성 중 토큰
+      data: {"type": "done",  ...}             — 후처리 완료 + 메타데이터
+    """
+    assert _rag is not None, "Service not initialized"
+
+    async def generate():
+        async for event in _rag.ask_stream(req.question):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/health", response_model=HealthResponse)

@@ -359,37 +359,41 @@ SYSTEM_PROMPT = """\
 - 컨텍스트에 없는 논문, 저널명, 수치를 절대 지어내지 마세요.
 - 출처 표기 시 반드시 컨텍스트에 있는 논문 제목을 그대로 사용하세요.
 
-═══ 답변 구조 (반드시 준수) ═══
+═══ 출력 형식 규칙 (반드시 준수) ═══
 
-[서론] 질문한 용어/성분이 무엇인지 1~2문장. 출처 붙이지 않습니다.
+출력은 반드시 아래 3단계 구조를 따르고, 각 단계 사이에 빈 줄(\\n\\n)을 넣으세요.
 
-[본론] 근거가 있는 내용을 문장 단위로 씁니다.
-- 각 문장 끝에 반드시 출처를 붙입니다: (출처: 논문 제목, 연도)
+[서론]
+- 출처 없이 1~2문장으로 용어/성분을 설명합니다.
+- 절대로 출처를 붙이지 않습니다.
+
+[본론]
+- 출처가 있는 문장만 씁니다.
+- 반드시 문장 하나당 줄 하나입니다. 한 줄에 두 문장을 쓰지 마세요.
+- 각 문장 끝에 반드시 (출처: 논문 제목, 연도) 형식으로 출처를 붙입니다.
 - 논문 제목은 [논문 컨텍스트]의 "제목:" 필드에 있는 원문 그대로 사용하세요.
-- 문장마다 줄바꿈합니다. 한 줄에 여러 문장 쓰지 마세요.
 - 수치가 있으면 반드시 포함하세요.
 
-[결론] 출처 없이 종합 의견 1~2문장 + "자세한 내용은 아래 논문을 확인하세요."
+[결론]
+- 출처 없이 종합 의견 1~2문장으로 마칩니다.
 
 ═══ 예시 (논문 있는 경우) ═══
 
-티르제파타이드는 비만 및 제2형 당뇨 치료에 사용되는 주사제입니다.
+티르제파타이드는 비만 및 제2형 당뇨 치료에 사용되는 GLP-1/GIP 이중 수용체 작용제 주사제입니다.
 
 72주 투여 시 체중이 평균 15~21% 감소했습니다. (출처: Tirzepatide Once Weekly for the Treatment of Obesity, 2022)
 3년간 투여 시 제2형 당뇨 진행 위험이 크게 줄었습니다. (출처: Tirzepatide for the Prevention of Type 2 Diabetes, 2025)
 
 개인 건강 상태에 따라 효과가 다를 수 있으므로 전문가 상담이 필요합니다.
-자세한 내용은 아래 논문을 확인하세요.
 
 ═══ 예시 (논문 없는 경우) ═══
 
-올레샷에 대한 직접적인 논문 근거는 없습니다. 올레샷은 올리브오일과 레몬즙을 공복에 마시는 건강법입니다.
+올레샷은 올리브오일과 레몬즙을 섞어 공복에 마시는 건강법입니다.
 
 올리브오일은 폴리페놀 성분이 항산화·항염 효과를 가집니다. (출처: Olive oil polyphenols and their implications in cardiovascular disease, 2018)
 레몬즙은 헤스페리딘 등 플라보노이드가 항산화·항균 효과를 가집니다. (출처: Citrus flavonoids as therapeutics in human diseases, 2022)
 
 각 성분의 효과는 입증되어 있으나 조합 자체를 검증한 연구는 없습니다.
-자세한 내용은 아래 논문을 확인하세요.
 
 ═══ 웹검색 결과 사용 시 ═══
 웹검색 내용 인용 시 문장 끝에 [웹 검색] 표시를 붙이세요.
@@ -455,29 +459,121 @@ def _verify_citations(answer: str) -> str:
     return answer
 
 
-def _structure_paragraphs(answer: str) -> str:
-    """서론/본론/결론 문단 구조화."""
-    lines = answer.strip().split("\n")
-    intro, body, outro = [], [], []
+def _split_into_sentences(text: str) -> list[str]:
+    """텍스트를 문장 단위로 분리한다.
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        if "(출처:" in line:
-            body.append(line)
-        elif body:
-            outro.append(line)
+    중첩 괄호를 올바르게 처리해 (출처: ... (성분명) ... 연도) 전체를
+    하나의 출처 블록으로 인식한다.
+    """
+    import re as _re
+
+    sentences: list[str] = []
+    i = 0
+    text = text.strip()
+
+    while i < len(text):
+        cite_pos = text.find("(출처:", i)
+
+        if cite_pos == -1:
+            # 남은 텍스트는 출처 없는 문장들 — 종결 어미 + "." + 다음 문장 시작으로 분리
+            remaining = text[i:].strip()
+            if remaining:
+                subs = _re.split(r"(?<=[다요니까]\.)\s+(?=[가-힣0-9])", remaining)
+                sentences.extend(s.strip() for s in subs if s.strip())
+            break
+
+        # 출처 앞 텍스트 분리
+        before = text[i:cite_pos].strip()
+        pre_sentences: list[str] = []
+        if before:
+            subs = _re.split(r"(?<=[다요니까]\.)\s+(?=[가-힣0-9])", before)
+            pre_sentences = [s.strip() for s in subs if s.strip()]
+
+        # 중첩 괄호를 고려해 "(출처: ...)" 전체 범위 탐색
+        depth = 0
+        j = cite_pos
+        while j < len(text):
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        cite_block = text[cite_pos : j + 1]  # "(출처: ...)" 전체
+
+        # 마지막 pre_sentence에 출처 블록을 붙임
+        if pre_sentences:
+            sentences.extend(pre_sentences[:-1])
+            full = (pre_sentences[-1] + " " + cite_block).strip()
         else:
-            intro.append(line)
+            full = cite_block
+        sentences.append(full)
+
+        i = j + 1
+        # 다음 문장 앞 공백 건너뜀
+        while i < len(text) and text[i] in " \t\n":
+            i += 1
+
+    return [s for s in sentences if s]
+
+
+def _structure_paragraphs(answer: str) -> str:
+    """서론/본론/결론 문단 구조화.
+
+    - LLM이 출력한 [서론]/[본론]/[결론] 라벨을 제거한다.
+    - ⚠️ safety note는 별도 단락으로 유지한다.
+    - 서론: 출처 없는 앞쪽 문장들
+    - 본론: 출처 있는 문장들 (각 문장을 \\n으로 분리)
+    - 결론: 출처 없는 뒤쪽 문장들
+    - 각 단락 사이 빈 줄(\\n\\n) 삽입
+    """
+    import re as _re
+
+    raw = answer.strip()
+
+    # LLM이 잘못 출력한 [서론]/[본론]/[결론] 라벨 제거
+    raw = _re.sub(r"\[서론\]|\[본론\]|\[결론\]", "", raw)
+    raw = _re.sub(r"[ \t]{2,}", " ", raw).strip()
+
+    # ⚠️ safety note 줄을 본문과 분리 (프론트엔드 warning box 처리 보호)
+    safety_lines: list[str] = []
+    content_lines: list[str] = []
+    for line in raw.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("⚠️") or "의사 또는 약사와 상담" in stripped:
+            safety_lines.append(stripped)
+        else:
+            content_lines.append(stripped)
+
+    # 본문 → 문장 단위 분리 후 서론/본론/결론 분류
+    all_sentences: list[str] = []
+    for line in content_lines:
+        all_sentences.extend(_split_into_sentences(line))
+
+    intro, body, outro = [], [], []
+    body_started = False
+
+    for sent in all_sentences:
+        if "(출처:" in sent:
+            body.append(sent)
+            body_started = True
+        elif body_started:
+            outro.append(sent)
+        else:
+            intro.append(sent)
 
     parts = []
+    if safety_lines:
+        parts.append("\n".join(safety_lines))  # ⚠️ 경고 단락
     if intro:
-        parts.append("\n".join(intro))
+        parts.append(" ".join(intro))           # 서론 한 문단
     if body:
-        parts.append("\n".join(body))
+        parts.append("\n".join(body))           # 본론 문장마다 줄바꿈
     if outro:
-        parts.append("\n".join(outro))
+        parts.append(" ".join(outro))           # 결론 한 문단
 
     return "\n\n".join(parts)
 

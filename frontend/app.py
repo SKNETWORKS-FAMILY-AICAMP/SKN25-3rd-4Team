@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import re
+import time
+from typing import Generator
 
 import requests
 import streamlit as st
@@ -114,21 +117,26 @@ st.markdown("""
 
 # ── Backend 호출 ──
 
-def call_backend(question: str) -> dict | None:
+def stream_backend(question: str) -> Generator[dict, None, None]:
+    """SSE 스트리밍 엔드포인트를 소비해 이벤트 dict를 yield한다."""
     try:
-        resp = requests.post(
-            f"{BACKEND_URL}/api/ask",
+        with requests.post(
+            f"{BACKEND_URL}/api/ask/stream",
             json={"question": question},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        return resp.json()
+            stream=True,
+            timeout=180,
+        ) as resp:
+            resp.raise_for_status()
+            for raw_line in resp.iter_lines():
+                if not raw_line:
+                    continue
+                line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+                if line.startswith("data: "):
+                    yield json.loads(line[6:])
     except requests.exceptions.ConnectionError:
-        st.error("백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요.")
-        return None
+        yield {"type": "error", "text": "백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인하세요."}
     except Exception as e:
-        st.error(f"요청 실패: {e}")
-        return None
+        yield {"type": "error", "text": f"요청 실패: {e}"}
 
 
 def check_backend_health() -> dict | None:
@@ -175,33 +183,59 @@ def render_source_pills(sources: list[dict]) -> str:
     return f'<div class="pill-wrap">{"".join(pills)}</div>'
 
 
-def render_answer_card(result: dict) -> str:
-    answer = result.get("answer", "")
-    paper_sources = result.get("paper_sources", [])
-    has_evidence = result.get("has_paper_evidence", False)
-    weak = result.get("weak_evidence", False)
-    paper_score = result.get("paper_score", 0.0)
-    category = result.get("category", "")
-    query_type = result.get("query_type", "general")
-    matched = result.get("matched_terms", [])
+def render_loading_card(status: str = "논문 검색 + 분석 중...") -> str:
+    """파이프라인 실행 중 표시할 로딩 카드."""
+    return (
+        '<div class="res-card"><h3>🧬 BioRAG 분석 리포트</h3>'
+        '<div style="display:flex;align-items:center;gap:10px;color:#64748B;'
+        'font-size:13px;padding:10px 0">'
+        '<div style="width:16px;height:16px;border:2px solid #4CAF80;'
+        'border-top-color:transparent;border-radius:50%;'
+        'animation:spin 0.8s linear infinite;flex-shrink:0"></div>'
+        f"{status}</div></div>"
+        "<style>@keyframes spin{to{transform:rotate(360deg)}}</style>"
+    )
 
-    # ── 답변 본문 ──
-    clean = re.sub(r"<[^>]+>", "", answer)
-    clean = re.sub(r'(?<!\n)(※)', r'\n\n\1', clean)
-    body_parts = []
+
+def _answer_lines_to_html(text: str) -> str:
+    """답변 텍스트를 HTML 줄 목록으로 변환 (render_answer_card와 동일 로직)."""
+    clean = re.sub(r"<[^>]+>", "", text)
+    clean = re.sub(r"\[서론\]|\[본론\]|\[결론\]", "", clean)
+    clean = re.sub(r"(?<!\n)(※)", r"\n\n\1", clean)
+    parts = []
     for line in clean.split("\n"):
         stripped = line.strip()
         if not stripped:
-            body_parts.append("<br>")
+            parts.append("<br>")
         elif "⚠️" in stripped or "의사 또는 약사와 상담" in stripped:
-            body_parts.append(f'<div class="combo-warning">{stripped}</div>')
+            parts.append(f'<div class="combo-warning">{stripped}</div>')
         elif "※ 검색된 논문의 관련도가 낮아" in stripped:
             pass
         elif "자세한 내용은 아래 논문을 확인하세요" in stripped:
             pass
         else:
-            body_parts.append(f"<p style='margin:4px 0'>{stripped}</p>")
-    body_html = "\n".join(body_parts)
+            parts.append(f"<p style='margin:4px 0'>{stripped}</p>")
+    return "\n".join(parts)
+
+
+_CURSOR_HTML = (
+    '<span style="display:inline-block;width:2px;height:1em;background:#166534;'
+    'animation:blink 0.7s step-end infinite;vertical-align:middle;margin-left:2px"></span>'
+    "<style>@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>"
+)
+
+
+def render_answer_card(result: dict, display_text: str | None = None, cursor: bool = False) -> str:
+    """최종 답변 카드.
+
+    display_text: 타이핑 애니메이션용 부분 텍스트. None이면 result["answer"] 사용.
+    cursor: True이면 깜빡이는 커서를 텍스트 끝에 붙임.
+    """
+    answer = display_text if display_text is not None else result.get("answer", "")
+    paper_sources = result.get("paper_sources", [])
+    has_evidence = result.get("has_paper_evidence", False)
+    weak = result.get("weak_evidence", False)
+    paper_score = result.get("paper_score", 0.0)
 
     # ── 근거 뱃지 ──
     if has_evidence and not weak:
@@ -214,11 +248,14 @@ def render_answer_card(result: dict) -> str:
     # ── 점수 바 (근거가 있을 때만) ──
     score_html = render_score_bar(paper_score) if has_evidence and paper_score > 0 else ""
 
-    # ── 출처 pills ──
-    source_html = render_source_pills(paper_sources)
+    # ── 답변 본문 + 커서 ──
+    body_html = _answer_lines_to_html(answer)
+    if cursor:
+        body_html += _CURSOR_HTML
 
+    # ── 출처 pills (타이핑 완료 후에만) ──
+    source_html = "" if cursor else render_source_pills(paper_sources)
 
-    # 빈 값으로 인한 빈 줄 방지 → compact 이어붙임
     inner = "".join(filter(None, [badge, score_html, body_html, source_html]))
     return f'<div class="res-card"><h3>🧬 BioRAG 분석 리포트</h3>{inner}</div>'
 
@@ -313,24 +350,48 @@ if user_input:
         st.markdown(user_input)
 
     with st.chat_message("assistant", avatar="🧬"):
-        with st.spinner("논문 검색 + 분석 중..."):
-            result = call_backend(user_input)
+        placeholder = st.empty()
+        # 즉시 로딩 카드 표시
+        placeholder.markdown(render_loading_card(), unsafe_allow_html=True)
+
+        streaming_text = ""
+        result = None
+
+        # 토큰은 조용히 수집, 로딩 카드만 유지
+        for event in stream_backend(user_input):
+            if event["type"] == "status":
+                if not streaming_text:
+                    placeholder.markdown(render_loading_card(event["text"]), unsafe_allow_html=True)
+            elif event["type"] == "chunk":
+                streaming_text += event["text"]
+            elif event["type"] == "done":
+                result = event
+            elif event["type"] == "error":
+                placeholder.warning(event["text"])
 
         if result:
-            # answer 필드에서 잔여 HTML 태그를 한 번 더 제거해서 저장
             clean_text = re.sub(r"<[^>]+>", "", result.get("answer", ""))
             result["answer"] = clean_text
 
-            card_html = render_answer_card(result)
-            st.markdown(card_html, unsafe_allow_html=True)
+            # 뱃지+점수바 고정, 텍스트만 3글자씩 부드럽게 타이핑
+            chunk = 3
+            for i in range(chunk, len(clean_text) + chunk, chunk):
+                placeholder.markdown(
+                    render_answer_card(result, display_text=clean_text[:i], cursor=True),
+                    unsafe_allow_html=True,
+                )
+                time.sleep(0.01)
+
+            # 타이핑 완료 → 출처 pills 포함 최종 카드
+            placeholder.markdown(render_answer_card(result), unsafe_allow_html=True)
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": clean_text,
                 "result": result,
             })
-        else:
+        elif not streaming_text:
             fallback = "서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요."
-            st.warning(fallback)
+            placeholder.warning(fallback)
             st.session_state.messages.append({"role": "assistant", "content": fallback})
 
         st.session_state.chat_history[st.session_state.current_chat_id] = (
