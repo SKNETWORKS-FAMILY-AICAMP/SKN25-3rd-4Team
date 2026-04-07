@@ -223,8 +223,12 @@ _ASSESS_SYSTEM = """\
 - 최신 트렌드/제품/커뮤니티 정보가 더 적합한 질문
 - 신조어·슬랭으로 논문 검색이 어려운 경우
 
-[weak_evidence=true 조건]
-- 논문은 있지만 질문에 직접 답하기 어려운 경우 (간접 근거만 존재)
+[weak_evidence=true 조건 — 하나라도 해당하면 true]
+- 브랜드명(위고비·리쥬란 등) 질문인데 성분명(세마글루타이드·PDRN) 논문만 있음
+- "끊으면?", "중단하면?" 질문인데 논문은 복용 중 효과만 다룸
+- "A랑 B 같이 하면?" 조합 질문인데 A 또는 B 각각의 논문만 있음
+- "얼마나 지속돼?" 질문인데 논문은 효과 유무만 다루고 기간 데이터 없음
+- 유사도 점수 0.4~0.65 구간이고 논문이 질문과 간접적으로만 연관
 
 [질문]
 {question}
@@ -366,6 +370,7 @@ SYSTEM_PROMPT = """\
 [서론]
 - 출처 없이 1~2문장으로 용어/성분을 설명합니다.
 - 절대로 출처를 붙이지 않습니다.
+- 문장이 2개이면 반드시 줄바꿈으로 분리합니다. 한 줄에 두 문장을 쓰지 마세요.
 
 [본론]
 - 출처가 있는 문장만 씁니다.
@@ -569,7 +574,7 @@ def _structure_paragraphs(answer: str) -> str:
     if safety_lines:
         parts.append("\n".join(safety_lines))  # ⚠️ 경고 단락
     if intro:
-        parts.append(" ".join(intro))           # 서론 한 문단
+        parts.append("\n".join(intro))          # 서론 문장마다 줄바꿈
     if body:
         parts.append("\n".join(body))           # 본론 문장마다 줄바꿈
     if outro:
@@ -617,6 +622,17 @@ def postprocess(state: GraphState) -> dict:
     ]
 
     if any(sig in answer for sig in no_evidence_signals):
+        return {
+            "answer": answer,
+            "has_paper_evidence": False,
+            "paper_docs": [],
+            "paper_score": 0.0,
+        }
+
+    # 간접 근거인데 유사도 점수가 매우 낮으면 → 근거 없음으로 처리
+    # (ChromaDB가 억지로 반환한 무관한 논문을 걸러냄)
+    paper_score = state.get("paper_score", 0.0)
+    if state.get("weak_evidence") and paper_score < 0.25:
         return {
             "answer": answer,
             "has_paper_evidence": False,

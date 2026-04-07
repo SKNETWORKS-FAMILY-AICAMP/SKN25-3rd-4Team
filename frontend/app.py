@@ -277,9 +277,8 @@ if "pending_input" not in st.session_state:
 with st.sidebar:
     st.markdown("""
     <div style="text-align:center; padding:16px 0 8px">
-        <div style="font-size:36px">🧬</div>
-        <div style="font-size:20px; font-weight:700; color:#166534">BioRAG</div>
-        <div style="font-size:12px; color:#6b7280">논문 기반 건강 팩트체커</div>
+        <div style="font-size:24px; font-weight:800; color:#166534">BioRAG</div>
+        <div style="font-size:16px; color:#6b7280">논문 기반 건강 팩트체커</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -327,7 +326,7 @@ with st.sidebar:
 
 # ── Main ──
 
-st.title("🧬 BioRAG")
+st.title("BioRAG")
 st.caption("논문 기반 건강 팩트체커 — PubMed + MedlinePlus + Glossary")
 
 for m in st.session_state.messages:
