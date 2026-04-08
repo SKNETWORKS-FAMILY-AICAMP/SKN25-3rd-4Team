@@ -98,6 +98,11 @@ biorag-health-chatbot/
 │   │
 │   └── requirements.txt
 │
+├── docs/                         # 산출물
+│   ├── architecture.md           # 시스템 아키텍처
+│   ├── data_preprocessing.md     # 데이터 전처리 문서
+│   └── test_report.md            # 테스트 케이스 및 결과 보고서
+│
 ├── frontend/
 │   ├── app.py                    # Streamlit 프론트엔드
 │   └── requirements.txt
@@ -112,16 +117,19 @@ biorag-health-chatbot/
 ## 4. 시스템 아키텍처
 ### RAG 파이프라인
 
+<img width="761" height="925" alt="Image" src="https://github.com/user-attachments/assets/8d672bfa-dbc5-4c06-88e0-9781da8f6400" />
+
+</br>
 </br>
 
 ### 유사도 3단계 
 `assess_retrieval` 노드에서 LLM이 논문 내용과 유사도 점수를 함께 평가해 3단계로 판정합니다.
 
-| 단계 | 조건 | 뱃지 | 점수 바 |
-|---|---|---|---|
-| 직접 근거 | `has_paper_evidence=True`, `weak_evidence=False` | 초록 `✓ 논문 근거 있음` | 표시 |
-| 간접 근거 | `has_paper_evidence=True`, `weak_evidence=True`, `paper_score ≥ 0.25` | 노랑 `△ 간접 근거` | 표시 |
-| 근거 없음 | `has_paper_evidence=False` 또는 `weak_evidence=True`, `paper_score < 0.25` | 빨강 `✗ 직접 근거 없음` | 미표시 |
+| 단계 | 조건 | 뱃지 |
+|---|---|---|
+| 직접 근거 | `has_paper_evidence=True`, `weak_evidence=False` | 초록 `✓ 논문 근거 있음` |
+| 간접 근거 | `has_paper_evidence=True`, `weak_evidence=True`, `paper_score ≥ 0.25` | 노랑 `△ 간접 근거` |
+| 근거 없음 | `has_paper_evidence=False` 또는 `weak_evidence=True`, `paper_score < 0.25` | 빨강 `✗ 직접 근거 없음` |
 
 ```
 질문 입력
@@ -261,11 +269,34 @@ streamlit run app.py
 </br>
 </br>
 
-## 8. 한계점 및 향후 개선 과제
+## 8. 향후 개선 과제
+
+- **사용자 친화적 UI/UX 고도화** </br>
+  대화형 인터페이스 시각화 기능 개선 및 Redis로 이전 대화 내용 기록 저장
+
+- **Docker 기반 서비스 배포 및 환경 재현** </br>
+  로컬 환경에 종속된 현재 시스템을 컨테이너화하여, 어떤 서버에서든 실행·배포 가능한 독립적 인프라 구축
+
+- **Airflow 기반 데이터 수집 자동화 및 확장** </br>
+  수동 데이터 스크래핑을 파이프라인으로 완전 자동화하여 카테고리 확장 및 벡터 DB 최신 상태 유지
 
 </br>
 </br>
 
 ## 9. 회고 
 
+> 김주희 </br>
 
+시스템 아키텍처와 LangGraph 파이프라인을 설계하고, PubMed 및 보조 문서 크롤링부터 코드 구조 리팩토링까지 전 과정을 직접 수행하며 모듈 간 의존성과 유지보수 구조의 중요성을 체감했고, 이를 통해 RAG 시스템 전체 흐름에 대한 이해를 크게 높일 수 있었습니다.
+
+> 김찬영 </br>
+
+백엔드와 프론트엔드 전체 구조를 파악하며 아키텍처 설계와 Git 협업의 중요성을 이 전 프로젝트보다 더 크게 다가왔던 프로젝트였습니다. 특히 오류 수정 과정에서 유지보수의 어려움을 체감하며 초기 코드 설계의 신중함을 배웠습니다. 열정적인 팀원들과 함께해서 좋은 결과물을 만들 수 있었습니다
+
+> 조민서 </br>
+
+이론으로만 접했던 RAG 시스템을 직접 구현하고 검증하는 경험을 할 수 있었습니다. 다양한 질문 유형에 대해 예상과 다른 결과가 나올 때마다 파이프라인 구조를 다시 들여다보며 디버깅하는 과정이 쉽지 않았지만, 팀원들과 함께 문제를 좁혀나가며 시스템 전체 흐름을 깊이 이해하게 된 계기가 되었습니다.
+
+> 최현우 </br>
+
+.
