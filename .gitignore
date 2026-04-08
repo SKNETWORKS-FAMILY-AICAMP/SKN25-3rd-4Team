@@ -7,10 +7,6 @@ venv/
 dist/
 build/
 
-# data
-backend/data/
-data/
-
 # IDE
 .idea/
 .vscode/
